@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<title>StockFlow Pro</title>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+body { font-family: Arial; background: #0f172a; color: white; text-align: center; }
+.container { width: 800px; margin: auto; }
+
+input { padding: 8px; margin: 5px; }
+
+button {
+  padding: 10px; margin: 5px; border: none; color: white; cursor: pointer;
+}
+.green { background: #22c55e; }
+.blue { background: #3b82f6; }
+.red { background: #ef4444; }
+.orange { background: #f59e0b; }
+
+table { width: 100%; margin-top: 20px; border-collapse: collapse; }
+td, th { border: 1px solid #ccc; padding: 8px; }
+
+.low { color: #f87171; font-weight: bold; }
+.selected { background: #1e293b; }
+</style>
+</head>
+
+<body>
+
+<div class="container">
+<h1>📦 StockFlow Pro</h1>
+
+<input id="nome" placeholder="Produto">
+<input id="qtd" type="number" placeholder="Quantidade">
+<input id="min" type="number" placeholder="Mínimo">
+
+<br>
+
+<button class="green" onclick="cadastrar()">Cadastrar</button>
+<button class="blue" onclick="entrada()">Entrada</button>
+<button class="red" onclick="saida()">Saída</button>
+<button class="orange" onclick="alertas()">Alertas</button>
+<button class="orange" onclick="alterarMinimo()">Alterar Mínimo</button>
+
+<h3 id="dashboard"></h3>
+
+<table>
+<thead>
+<tr>
+<th>Produto</th>
+<th>Qtd</th>
+<th>Mín</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody id="tabela"></tbody>
+</table>
+
+<canvas id="grafico"></canvas>
+</div>
+
+<script>
+// ==============================
+// DADOS
+// ==============================
+let estoque = JSON.parse(localStorage.getItem("estoque") || "{}");
+let selecionado = null;
+let chart;
+
+// INPUTS
+const nomeInput = document.getElementById("nome");
+const qtdInput = document.getElementById("qtd");
+const minInput = document.getElementById("min");
+
+function salvar() {
+  localStorage.setItem("estoque", JSON.stringify(estoque));
+}
+
+// =============================
+// CADASTRO
+// =============================
+function cadastrar() {
+  const nome = nomeInput.value.trim();
+  const qtd = parseInt(qtdInput.value);
+  const min = parseInt(minInput.value);
+
+  if (!nome || isNaN(qtd) || isNaN(min)) {
+    alert("Preencha corretamente");
+    return;
+  }
+
+  if (estoque[nome]) {
+    estoque[nome].quantidade += qtd;
+    estoque[nome].minimo = min;
+  } else {
+    estoque[nome] = { quantidade: qtd, minimo: min };
+  }
+
+  salvar();
+  render();
+  limpar();
+}
+
+// =============================
+// ENTRADA
+// =============================
+function entrada() {
+  if (!selecionado || !estoque[selecionado]) {
+    alert("Selecione um produto");
+    return;
+  }
+
+  const qtd = parseInt(qtdInput.value);
+  if (isNaN(qtd) || qtd <= 0) {
+    alert("Quantidade inválida");
+    return;
+  }
+
+  estoque[selecionado].quantidade += qtd;
+
+  salvar();
+  render();
+  qtdInput.value = "";
+}
+
+// =============================
+// SAÍDA
+// =============================
+function saida() {
+  if (!selecionado || !estoque[selecionado]) {
+    alert("Selecione um produto na tabela");
+    return;
+  }
+
+  const qtd = parseInt(qtdInput.value);
+
+  if (isNaN(qtd) || qtd <= 0) {
+    alert("Informe uma quantidade válida");
+    return;
+  }
+
+  if (qtd > estoque[selecionado].quantidade) {
+    alert("Estoque insuficiente");
+    return;
+  }
+
+  estoque[selecionado].quantidade -= qtd;
+
+  salvar();
+  render();
+  qtdInput.value = "";
+}
+
+// =============================
+// ALTERAR MÍNIMO (NOVO)
+// =============================
+function alterarMinimo() {
+  if (!selecionado || !estoque[selecionado]) {
+    alert("Selecione um produto");
+    return;
+  }
+
+  const novoMin = parseInt(minInput.value);
+
+  if (isNaN(novoMin) || novoMin < 0) {
+    alert("Informe um valor válido para o mínimo");
+    return;
+  }
+
+  estoque[selecionado].minimo = novoMin;
+
+  salvar();
+  render();
+
+  alert("Estoque mínimo atualizado com sucesso");
+}
+
+// =============================
+// ALERTAS
+// =============================
+function alertas() {
+  let msg = "";
+
+  for (let nome in estoque) {
+    if (estoque[nome].quantidade <= estoque[nome].minimo) {
+      msg += nome + "\n";
+    }
+  }
+
+  alert(msg || "Sem alertas");
+}
+
+// =============================
+// LIMPAR
+// =============================
+function limpar() {
+  nomeInput.value = "";
+  qtdInput.value = "";
+  minInput.value = "";
+}
+
+// =============================
+// AUTO-SELEÇÃO
+// =============================
+nomeInput.addEventListener("input", () => {
+  const nome = nomeInput.value.trim();
+  if (estoque[nome]) {
+    selecionado = nome;
+  }
+});
+
+// =============================
+// RENDER
+// =============================
+const tabela = document.getElementById("tabela");
+const dashboard = document.getElementById("dashboard");
+
+function render() {
+  tabela.innerHTML = "";
+  let baixo = 0;
+
+  Object.keys(estoque).forEach(nome => {
+    const p = estoque[nome];
+    const status = p.quantidade <= p.minimo ? "BAIXO" : "OK";
+
+    if (status === "BAIXO") baixo++;
+
+    const tr = document.createElement("tr");
+
+    tr.innerHTML = `
+      <td>${nome}</td>
+      <td>${p.quantidade}</td>
+      <td>${p.minimo}</td>
+      <td class="${status === "BAIXO" ? "low" : ""}">${status}</td>
+    `;
+
+    tr.onclick = () => {
+      selecionado = nome;
+
+      document.querySelectorAll("#tabela tr").forEach(r => r.classList.remove("selected"));
+      tr.classList.add("selected");
+
+      nomeInput.value = nome;
+      minInput.value = p.minimo;
+      qtdInput.value = "";
+    };
+
+    tabela.appendChild(tr);
+  });
+
+  const total = Object.keys(estoque).length;
+
+  dashboard.innerText =
+    `📦 Total: ${total} | ⚠️ Baixo: ${baixo} | ✅ OK: ${total - baixo}`;
+
+  atualizarGrafico();
+}
+
+// =============================
+// GRÁFICO
+// =============================
+function atualizarGrafico() {
+  const labels = Object.keys(estoque);
+  const dados = labels.map(n => estoque[n].quantidade);
+
+  if (chart) chart.destroy();
+
+  chart = new Chart(document.getElementById("grafico"), {
+    type: "bar",
+    data: {
+      labels: labels,
+      datasets: [{
+        label: "Quantidade em Estoque",
+        data: dados
+      }]
+    }
+  });
+}
+
+render();
+</script>
+
+</body>
+</html>
